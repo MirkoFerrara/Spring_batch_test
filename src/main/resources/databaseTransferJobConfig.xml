@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xmlns:jdbc="http://www.springframework.org/schema/jdbc"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+           http://www.springframework.org/schema/batch
+           http://www.springframework.org/schema/batch/spring-batch-2.1.xsd
+           http://www.springframework.org/schema/jdbc
+           http://www.springframework.org/schema/jdbc/spring-jdbc-2.5.xsd">
+
+    <import resource="classpath:/applicationContextConfig.xml"/>
+
+    <!-- Reader per leggere da Database A -->
+    <bean id="myTableReader" class="org.springframework.batch.item.database.JdbcCursorItemReader">
+        <property name="dataSource" ref="dataSourceA"/>
+        <property name="sql" value="SELECT * FROM MyTable"/>
+        <property name="rowMapper">
+            <bean class="batch.toDatabase.MyTableRowMapper"/>
+        </property>
+    </bean>
+
+    <!-- Writer per scrivere su Database B -->
+    <bean id="myTableWriter" class="org.springframework.batch.item.database.JdbcBatchItemWriter">
+        <property name="dataSource" ref="dataSourceA"/>
+        <property name="sql" value="INSERT INTO SYSTEM.TESTTABLE (id, name) VALUES (?, ?)"/>
+        <property name="itemPreparedStatementSetter">
+            <bean class="batch.toDatabase.MyTablePreparedStatementSetter"/>
+        </property>
+    </bean>
+
+    <!-- Definizione Job -->
+    <batch:job id="transferMyTableJob">
+        <batch:step id="transferMyTableStep">
+            <batch:tasklet>
+                <batch:chunk reader="myTableReader"
+                             writer="myTableWriter"
+                             commit-interval="100">
+                            <!-- skip-limit="5" > -->
+                <!-- <batch:skippable-exception-classes>
+                     <batch:include class="java.sql.SQLException"/>
+                 </batch:skippable-exception-classes> -->
+                </batch:chunk>
+            </batch:tasklet>
+        </batch:step>
+    </batch:job>
+</beans>

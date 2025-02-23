@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xmlns:integration="http://www.springframework.org/schema/integration"
+       xmlns:integration-ftp="http://www.springframework.org/schema/integration/ftp"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+           http://www.springframework.org/schema/batch
+           http://www.springframework.org/schema/batch/spring-batch-2.1.xsd
+           http://www.springframework.org/schema/integration
+           http://www.springframework.org/schema/integration/spring-integration.xsd
+           http://www.springframework.org/schema/integration/ftp
+           http://www.springframework.org/schema/integration/ftp/spring-integration-ftp.xsd">
+
+    <import resource="classpath:/applicationContextConfig.xml"/>
+
+    <!-- FTP Session Factory -->
+    <bean id="ftpSessionFactory" class="org.springframework.integration.ftp.session.DefaultFtpSessionFactory">
+        <property name="host" value="ftp.example.com"/>
+        <property name="port" value="21"/>
+        <property name="username" value="ftpUser"/>
+        <property name="password" value="ftpPassword"/>
+    </bean>
+
+    <!-- Canale per l'integrazione tra FTP e Job Batch -->
+    <integration:channel id="ftpFileChannel" />
+
+    <!-- FTP Inbound Channel Adapter per monitorare la directory remota -->
+    <integration-ftp:inbound-channel-adapter
+            session-factory="ftpSessionFactory"
+            channel="ftpFileChannel"
+            remote-directory="/remote/path"
+            auto-create-local-directory="true"
+            local-directory="/local/path"
+            filename-pattern="*.csv">
+        <integration:poller fixed-rate="10000"/> <!-- Controlla ogni 10 secondi -->
+    </integration-ftp:inbound-channel-adapter>
+
+    <!-- Gateway per avviare il job batch quando arrivano nuovi file -->
+    <integration:service-activator
+            input-channel="ftpFileChannel"
+            ref="jobLauncher"
+            method="run">
+        <integration:method-args>
+            <integration:arg value="ftpImportJob"/>
+            <integration:arg>
+                <bean class="org.springframework.batch.core.JobParametersBuilder">
+                    <property name="string" value="ftpFileName"/>
+                    <!-- Parametro dinamico per il nome del file -->
+                </bean>
+            </integration:arg>
+        </integration:method-args>
+    </integration:service-activator>
+
+    <!-- Job Launcher -->
+    <bean id="jobLauncher" class="org.springframework.batch.core.launch.support.TaskExecutorJobLauncher">
+        <property name="jobRepository" ref="jobRepository"/>
+        <property name="taskExecutor">
+            <bean class="org.springframework.core.task.SimpleAsyncTaskExecutor"/>
+        </property>
+    </bean>
+
+    <!-- Flat File Item Reader per i file CSV scaricati da FTP -->
+    <bean id="ftpFileReader" class="org.springframework.batch.item.file.FlatFileItemReader">
+        <property name="resource" value="file:/local/path/${file.name}"/>
+        <!-- Sostituisci ${file.name} con il nome del file dinamico -->
+        <property name="lineMapper">
+            <bean class="org.springframework.batch.item.file.mapping.DefaultLineMapper">
+                <property name="lineTokenizer">
+                    <bean class="org.springframework.batch.item.file.transform.DelimitedLineTokenizer">
+                        <property name="names" value="id,name"/>
+                    </bean>
+                </property>
+                <property name="fieldSetMapper">
+                    <bean class="org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper">
+                        <property name="targetType" value="batch.toDatabase.MyTable"/>
+                    </bean>
+                </property>
+            </bean>
+        </property>
+    </bean>
+
+    <!-- Writer per inserire dati nel database -->
+    <bean id="ftpFileWriter" class="org.springframework.batch.item.database.JdbcBatchItemWriter">
+        <property name="dataSource" ref="dataSourceB"/>
+        <property name="sql" value="INSERT INTO MyTable (id, name) VALUES (?, ?)"/>
+        <property name="itemPreparedStatementSetter">
+            <bean class="batch.toDatabase.MyTablePreparedStatementSetter"/>
+        </property>
+    </bean>
+
+    <!-- Job FTP -->
+    <batch:job id="ftpImportJob">
+        <batch:step id="ftpImportStep">
+            <batch:tasklet>
+                <batch:chunk reader="ftpFileReader" writer="ftpFileWriter" commit-interval="10">
+                    <batch:skippable-exception-classes>
+                        <batch:include class="java.io.IOException"/>
+                    </batch:skippable-exception-classes>
+                    <batch:skip-limit value="5"/>
+                </batch:chunk>
+            </batch:tasklet>
+        </batch:step>
+    </batch:job>
+</beans>
+
+<!--
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:batch="http://www.springframework.org/schema/batch"
+       xmlns:integration="http://www.springframework.org/schema/integration"
+       xmlns:integration-ftp="http://www.springframework.org/schema/integration/ftp"
+       xsi:schemaLocation="
+           http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans-2.5.xsd
+           http://www.springframework.org/schema/batch
+           http://www.springframework.org/schema/batch/spring-batch-2.1.xsd
+           http://www.springframework.org/schema/integration
+           http://www.springframework.org/schema/integration/spring-integration.xsd
+           http://www.springframework.org/schema/integration/ftp
+           http://www.springframework.org/schema/integration/ftp/spring-integration-ftp.xsd">
+
+
+<bean id="ftpSessionFactory" class="org.springframework.integration.ftp.session.DefaultFtpSessionFactory">
+<property name="host" value="ftp.example.com"/>
+<property name="port" value="21"/>
+<property name="username" value="ftpUser"/>
+<property name="password" value="ftpPassword"/>
+</bean>
+
+
+<integration-ftp:inbound-channel-adapter
+session-factory="ftpSessionFactory"
+channel="ftpFileChannel"
+remote-directory="/remote/path"
+auto-create-local-directory="true"
+local-directory="/local/path"
+filename-pattern="*.csv">
+<integration:poller fixed-rate="10000"/>
+</integration-ftp:inbound-channel-adapter>
+
+
+<integration:service-activator input-channel="ftpFileChannel" ref="jobLauncherServiceActivator"/>
+
+
+<bean id="jobLauncherServiceActivator" class="org.springframework.batch.integration.launch.JobLaunchingGateway">
+<constructor-arg ref="jobLauncher"/>
+</bean>
+
+
+<batch:job id="ftpImportJob">
+<batch:step id="ftpImportStep">
+    <batch:tasklet>
+        <batch:chunk reader="ftpFileReader"
+                     writer="ftpFileWriter"
+                     commit-interval="10">
+        </batch:chunk>
+    </batch:tasklet>
+</batch:step>
+</batch:job>
+
+        </beans>
+-->
